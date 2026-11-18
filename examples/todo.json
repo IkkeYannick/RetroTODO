@@ -1,0 +1,23 @@
+{
+  "project": "Game Engine",
+  "todos": [
+    {
+      "text": "Renderer",
+      "done": false,
+      "children": [
+        { "text": "Sprite batching", "done": true },
+        { "text": "Text rendering", "done": false },
+        {
+          "text": "Shaders",
+          "done": false,
+          "children": [
+            { "text": "Bloom", "done": false },
+            { "text": "CRT filter", "done": true }
+          ]
+        }
+      ]
+    },
+    { "text": "Audio mixer", "done": false },
+    "Plain strings work too"
+  ]
+}
