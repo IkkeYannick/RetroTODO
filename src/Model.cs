@@ -56,6 +56,7 @@ public sealed class Section
     public string? FilePath;           // set for live-linked files
     public List<TodoItem> Items = new();
     public string? Error;
+    public string? CacheHash; // hash of the last copy saved to the cache
 
     public bool IsLinked => FilePath != null;
 

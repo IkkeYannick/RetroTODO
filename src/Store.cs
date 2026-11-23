@@ -68,19 +68,48 @@ public sealed class Store
 
     // ---------- persistence ----------
 
+    /// <summary>True when todos.json exists but couldn't be read: saving is blocked so it can't be overwritten.</summary>
+    public bool SaveBlocked { get; private set; }
+
+    static string Backup => Paths.Data + ".backup";
+
     public static Store Load()
     {
         var st = new Store();
         StoreData? d = null;
-        try
+        if (File.Exists(Paths.Data))
         {
-            if (File.Exists(Paths.Data))
-                d = JsonSerializer.Deserialize<StoreData>(File.ReadAllText(Paths.Data), Opts);
-        }
-        catch
-        {
-            // Never silently lose data: keep a copy of the unreadable file.
-            try { File.Copy(Paths.Data, Paths.Data + ".broken-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"), true); } catch { }
+            // At boot the file can be locked for a while (antivirus, sync tools): keep trying for ~30 s.
+            string? text = null;
+            for (int attempt = 0; text == null && attempt < 150; attempt++)
+            {
+                try { text = File.ReadAllText(Paths.Data); }
+                catch (IOException) { Thread.Sleep(200); }
+                catch (UnauthorizedAccessException) { Thread.Sleep(200); }
+            }
+
+            if (text != null) d = TryParse(text);
+            if (d == null)
+            {
+                // Unreadable or damaged: fall back to the last good backup, and never save over the original.
+                if (File.Exists(Backup))
+                {
+                    try { d = TryParse(File.ReadAllText(Backup)); } catch { }
+                }
+                if (text != null)
+                {
+                    try { File.Copy(Paths.Data, Paths.Data + ".broken-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"), true); } catch { }
+                }
+                else
+                {
+                    st.SaveBlocked = true;
+                    st.LastError = "COULDN'T READ todos.json (FILE LOCKED). CHANGES AREN'T SAVED UNTIL YOU RESTART THE APP.";
+                }
+            }
+            else
+            {
+                try { File.Copy(Paths.Data, Backup, true); } catch { } // last known good
+            }
         }
         d ??= new StoreData();
         st.Local.Items = d.Todos ?? new();
@@ -100,8 +129,15 @@ public sealed class Store
         return st;
     }
 
+    static StoreData? TryParse(string text)
+    {
+        try { return JsonSerializer.Deserialize<StoreData>(text, Opts); }
+        catch { return null; }
+    }
+
     public void Save()
     {
+        if (SaveBlocked) return; // never overwrite a todos.json we couldn't read
         try
         {
             Directory.CreateDirectory(Paths.Dir);
@@ -396,15 +432,29 @@ public sealed class Store
         dirty.Add(s);
         busyTicks = 0;
         reload.Stop();
+        reload.Interval = 250;
         reload.Start(); // debounce editors that write in several steps
     }
 
+    /// <summary>
+    /// Reload changed files. Files that can't be read yet (e.g. OneDrive still starting at boot)
+    /// are retried quickly for 10 s, then every 30 s until they're back — never given up on.
+    /// </summary>
     void ReloadDirty()
     {
         reload.Stop();
         foreach (var s in dirty.ToList())
-            if (Sources.Load(s)) dirty.Remove(s);
-        if (dirty.Count > 0 && ++busyTicks < 40) reload.Start(); // file was locked: retry
+        {
+            if (!Sources.Load(s)) continue;
+            dirty.Remove(s);
+            Watch(s); // the folder may not have existed when we first tried
+        }
+        if (dirty.Count > 0)
+        {
+            busyTicks++;
+            reload.Interval = busyTicks < 40 ? 250 : 30_000;
+            reload.Start();
+        }
         Changed?.Invoke();
     }
 }

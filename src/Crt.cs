@@ -30,7 +30,19 @@ static class Theme
         return width == 1 ? s[..1] : s[..(width - 1)] + "…";
     }
 
+    /// <summary>The app icon (RetroTodo.ico, embedded), falling back to a drawn one.</summary>
     public static Icon MakeIcon()
+    {
+        try
+        {
+            using var s = typeof(Theme).Assembly.GetManifestResourceStream("RetroTodo.ico");
+            if (s != null) return new Icon(s);
+        }
+        catch { }
+        return DrawIcon();
+    }
+
+    static Icon DrawIcon()
     {
         using var bmp = new Bitmap(32, 32, PixelFormat.Format32bppArgb);
         using (var g = Graphics.FromImage(bmp))

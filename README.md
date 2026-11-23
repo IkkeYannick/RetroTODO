@@ -10,8 +10,18 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
 This builds the app and installs it to `%LOCALAPPDATA%\Programs\RetroTodo`. It also sets it to start with
-Windows (it opens as the overlay), adds a **Retro Todo** Start menu shortcut, and starts it.
+Windows (it opens as the overlay), adds **Retro Todo** shortcuts (with the green `>_` icon) to the Start menu
+and the Desktop, and starts it. If it ever isn't open, click that shortcut. Clicking it while the app runs brings it
+forward: side tab → overlay → full view.
 Use `.\uninstall.ps1` to remove it again. Your todos are kept unless you pass `-RemoveData`.
+
+Windows **Smart App Control** blocks unsigned `.exe` files, so the app is installed as `RetroTodo.dll` and started
+by Microsoft's signed `dotnet.exe`, through `conhost.exe --headless` so no console window appears.
+In Task Manager it shows up as *.NET Host*.
+
+**Safety:** if `todos.json` is locked at boot, the app waits for it and never saves over a file it couldn't read.
+A last good copy is kept as `todos.json.backup`. Linked files that aren't reachable yet (for example OneDrive
+still starting up) show their last copy from `%APPDATA%\RetroTodo\cache` and are retried every 30 s.
 
 Requires the .NET 10 Desktop Runtime (already installed on this PC).
 

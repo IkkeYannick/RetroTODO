@@ -269,6 +269,13 @@ sealed class OverlayForm : Form
                     pins.Add((it.Text, it.Progress(), it.Complete(), it.Children.Count > 0 ? it.NextOpenLeaf() : null));
         }
 
+        if (Store.LastError != null)
+            body.Add(("!! " + Theme.Fit(Store.LastError, w - 3), Theme.Amber));
+
+        // Linked files that can't be read right now (shown from their last copy, retried automatically)
+        foreach (var sec in Store.Linked.Where(x => x.Error != null))
+            body.Add(("!! " + Theme.Fit($"{sec.Title.ToUpperInvariant()}: {sec.Error}", w - 3), Theme.Amber));
+
         // Today: due today / overdue / marked with T
         var now = DateTime.Now;
         var today = Store.TodayItems(now);

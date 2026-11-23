@@ -22,46 +22,87 @@ static class Sources
         return folder.Length > 0 ? $"{folder}/{Path.GetFileName(path)}" : Path.GetFileName(path);
     }
 
-    /// <summary>Loads the section from disk. Returns false if the file is busy (caller retries).</summary>
+    /// <summary>
+    /// Loads the section from disk. Returns false when the file can't be read right now
+    /// (missing, locked, OneDrive not ready yet at boot...): the caller keeps retrying, and
+    /// meanwhile the last good copy from the cache is shown so the list never looks empty.
+    /// </summary>
     public static bool Load(Section s)
     {
-        string path = s.FilePath!;
         string text;
         try
         {
-            text = Read(path, out _);
+            text = Read(s.FilePath!, out _);
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
-            s.Items = new();
-            s.Error = "FILE MISSING";
-            return true;
+            return Fallback(s, "FILE NOT FOUND");
         }
         catch (UnauthorizedAccessException)
         {
-            s.Error = "ACCESS DENIED";
-            return true;
+            return Fallback(s, "ACCESS DENIED");
         }
         catch (IOException)
         {
-            return false;
+            return Fallback(s, "FILE BUSY");
         }
 
+        if (!Parse(s, text))
+        {
+            s.Error = "PARSE ERROR"; // keep showing the last good version
+            return true;
+        }
+        s.Error = null;
+        SaveCache(s, text);
+        return true;
+    }
+
+    static bool Parse(Section s, string text)
+    {
         try
         {
             string? title;
-            var items = IsJson(path) ? JsonTodo.Parse(text, out title) : MarkdownTodo.Parse(text, out title);
+            var items = IsJson(s.FilePath!) ? JsonTodo.Parse(text, out title) : MarkdownTodo.Parse(text, out title);
             s.Items = items;
-            s.Title = string.IsNullOrWhiteSpace(title) ? DefaultTitle(path) : title.Trim();
-            s.Error = null;
+            s.Title = string.IsNullOrWhiteSpace(title) ? DefaultTitle(s.FilePath!) : title.Trim();
             AssignIds(s);
             s.Wire();
+            return true;
         }
         catch
         {
-            s.Error = "PARSE ERROR"; // keep showing the last good version
+            return false;
         }
-        return true;
+    }
+
+    static bool Fallback(Section s, string reason)
+    {
+        if (s.Items.Count == 0 && ReadCache(s) is { } cached) Parse(s, cached);
+        s.Error = s.Items.Count > 0 ? reason + ", SHOWING LAST COPY" : reason + ", RETRYING";
+        return false;
+    }
+
+    // ---------- last-good-copy cache (%APPDATA%\RetroTodo\cache) ----------
+
+    static string CachePath(Section s) => Path.Combine(Paths.Cache, s.Id + (IsJson(s.FilePath!) ? ".json" : ".md"));
+
+    static void SaveCache(Section s, string text)
+    {
+        string hash = Hash(text);
+        if (s.CacheHash == hash) return;
+        try
+        {
+            Directory.CreateDirectory(Paths.Cache);
+            File.WriteAllText(CachePath(s), text, new UTF8Encoding(false));
+            s.CacheHash = hash;
+        }
+        catch { }
+    }
+
+    static string? ReadCache(Section s)
+    {
+        try { return File.Exists(CachePath(s)) ? File.ReadAllText(CachePath(s)) : null; }
+        catch { return null; }
     }
 
     public static string ReadText(string path) => Read(path, out _);

@@ -67,6 +67,7 @@ static class Paths
 
     public static readonly string Data = Path.Combine(Dir, "todos.json");
     public static readonly string Inbox = Path.Combine(Dir, "inbox");
+    public static readonly string Cache = Path.Combine(Dir, "cache");
 }
 
 /// <summary>A second launch writes a small .cmd file here; the running copy picks it up.</summary>
@@ -89,7 +90,24 @@ static class AutoStart
 {
     const string Key = @"Software\Microsoft\Windows\CurrentVersion\Run";
     const string Name = "RetroTodo";
-    static string Command => $"\"{Environment.ProcessPath}\" --startup";
+    static string Command => LaunchCommand("--startup");
+
+    /// <summary>
+    /// Command line that starts this app. When it runs as "dotnet RetroTodo.dll" (the install layout,
+    /// because Smart App Control blocks unsigned .exe files) it goes through "conhost --headless"
+    /// so dotnet.exe's console window never appears.
+    /// </summary>
+    public static string LaunchCommand(string args)
+    {
+        string host = Environment.ProcessPath ?? "";
+        if (Path.GetFileName(host).Equals("dotnet.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            string dll = Path.Combine(AppContext.BaseDirectory, "RetroTodo.dll");
+            string conhost = Path.Combine(Environment.SystemDirectory, "conhost.exe");
+            return $"\"{conhost}\" --headless \"{host}\" \"{dll}\" {args}".TrimEnd();
+        }
+        return $"\"{host}\" {args}".TrimEnd();
+    }
 
     public static bool IsOn()
     {
